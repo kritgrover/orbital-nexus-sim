@@ -5,30 +5,43 @@ import OrbitalParameters from "@/components/dashboard/OrbitalParameters";
 import MessageExchange from "@/components/dashboard/MessageExchange";
 import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
 import PassPrediction from "@/components/analytics/PassPrediction";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
 const Index = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
       
-      <main className="flex-1 grid grid-cols-12 gap-0">
-        {/* Left Panel - Globe View (30%) */}
-        <div className="col-span-12 lg:col-span-4 xl:col-span-3 border-r border-border bg-panel">
-          <GlobeView />
-        </div>
+      <main className="flex-1">
+        <ResizablePanelGroup direction="horizontal" className="h-full">
+          {/* Left Panel - Globe View */}
+          <ResizablePanel defaultSize={28} minSize={20} className="bg-panel">
+            <div className="h-full border-r border-border">
+              <GlobeView />
+            </div>
+          </ResizablePanel>
 
-        {/* Center Panel - Communication Dashboard (40%) */}
-        <div className="col-span-12 lg:col-span-4 xl:col-span-5 border-r border-border p-4 space-y-4 overflow-y-auto">
-          <LinkStatus />
-          <OrbitalParameters />
-          <MessageExchange />
-        </div>
+          <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
 
-        {/* Right Panel - Analytics (30%) */}
-        <div className="col-span-12 lg:col-span-4 xl:col-span-4 p-4 space-y-4 overflow-y-auto">
-          <LinkBudgetChart />
-          <PassPrediction />
-        </div>
+          {/* Center Panel - Communication Dashboard */}
+          <ResizablePanel defaultSize={42} minSize={30}>
+            <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
+              <LinkStatus />
+              <OrbitalParameters />
+              <MessageExchange />
+            </div>
+          </ResizablePanel>
+
+          <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
+
+          {/* Right Panel - Analytics */}
+          <ResizablePanel defaultSize={30} minSize={20}>
+            <div className="h-full p-4 space-y-4 overflow-y-auto">
+              <LinkBudgetChart />
+              <PassPrediction />
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </main>
     </div>
   );
