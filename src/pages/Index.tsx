@@ -93,7 +93,7 @@ const Index = () => {
           <ResizablePanel defaultSize={42} minSize={30}>
             <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
               <LinkStatus />
-              <OrbitalParameters activeStation={activeStation?.name || 'Toronto'} />
+              <OrbitalParameters orbitalData={orbitalData} />
               <MessageExchange 
                 activeStationId={activeStationId}
                 stationColor={activeStation?.color || '#4ade80'}

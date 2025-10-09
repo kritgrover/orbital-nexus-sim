@@ -139,6 +139,15 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     min_elevation=MIN_ELEVATION_FOR_VISIBILITY
                 )
                 
+                # Calculate pass window if currently visible
+                pass_window = None
+                if is_visible:
+                    pass_window = tracker.calculate_pass_window(
+                        station["lat"],
+                        station["lon"],
+                        min_elevation=MIN_ELEVATION_FOR_VISIBILITY
+                    )
+                
                 station_data = {
                     "id": station["id"],
                     "name": station["name"],
@@ -147,7 +156,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "look_angles": look_angles,
                     "is_visible": is_visible,
                     "next_pass_minutes": next_pass["minutes_until"],
-                    "next_pass_time": next_pass["start_time"]
+                    "next_pass_time": next_pass["start_time"],
+                    "pass_window": pass_window
                 }
                 
                 stations_data.append(station_data)
@@ -177,6 +187,33 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 last_path_update = now
                 print("🔄 Updated orbital path")
             
+            # Build orbital parameters for active station
+            active_station_data = None
+            if current_active_station:
+                active_station_data = next(
+                    (s for s in stations_data if s["id"] == current_active_station), 
+                    None
+                )
+            
+            orbital_parameters = None
+            if active_station_data:
+                orbital_parameters = {
+                    "active_station": active_station_data["name"],
+                    "latitude": iss_position["latitude"],
+                    "longitude": iss_position["longitude"],
+                    "altitude_km": iss_position["altitude_km"],
+                    "velocity_kmps": iss_position["velocity_kmps"],
+                    "azimuth": active_station_data["look_angles"]["azimuth"],
+                    "elevation": active_station_data["look_angles"]["elevation"],
+                    "range_km": active_station_data["look_angles"]["range_km"],
+                    "next_pass_time": active_station_data["next_pass_time"],
+                    "next_pass_minutes": active_station_data["next_pass_minutes"],
+                    "aos_time": active_station_data["pass_window"]["aos_time"] if active_station_data["pass_window"] else None,
+                    "los_time": active_station_data["pass_window"]["los_time"] if active_station_data["pass_window"] else None,
+                    "pass_duration_minutes": active_station_data["pass_window"]["duration_minutes"] if active_station_data["pass_window"] else 0,
+                    "is_in_pass": active_station_data["pass_window"]["is_in_pass"] if active_station_data["pass_window"] else False
+                }
+            
             # Log every 10 seconds
             if iteration % 10 == 0:
                 visible_count = len(visible_stations)
@@ -195,7 +232,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "stations": stations_data,
                 "active_station_id": current_active_station,
                 "visible_stations_count": len(visible_stations),
-                "min_elevation": MIN_ELEVATION_FOR_VISIBILITY
+                "min_elevation": MIN_ELEVATION_FOR_VISIBILITY,
+                "orbital_parameters": orbital_parameters  # NEW
             }
             
             # Send data

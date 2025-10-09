@@ -157,3 +157,97 @@ class OrbitalTracker:
             "opening_angle": float(opening_angle),
             "is_active": bool(look_angles["is_visible"])
         }
+    
+    def calculate_pass_window(self, ground_lat: float, ground_lon: float, 
+                         min_elevation: float = 0.0) -> Dict:
+        """Calculate current pass start (AOS) and end (LOS) times"""
+        t_now = self.ts.now()
+        ground_station = wgs84.latlon(ground_lat, ground_lon)
+        
+        # Check current elevation
+        difference = self.satellite - ground_station
+        topocentric = difference.at(t_now)
+        current_alt, _, _ = topocentric.altaz()
+        
+        # If not currently visible, no pass window
+        if current_alt.degrees <= min_elevation:
+            return {
+                "aos_time": None,
+                "los_time": None,
+                "duration_minutes": 0,
+                "is_in_pass": False
+            }
+        
+        # Find AOS (look backwards in time)
+        aos_time = None
+        for minutes_back in range(1, 30):  # Look back up to 30 minutes
+            past_datetime = t_now.utc_datetime()
+            total_minutes = past_datetime.minute - minutes_back
+            hours_adjust = 0
+            
+            if total_minutes < 0:
+                hours_adjust = -1
+                total_minutes += 60
+            
+            t_past = self.ts.utc(
+                past_datetime.year,
+                past_datetime.month,
+                past_datetime.day,
+                past_datetime.hour + hours_adjust,
+                total_minutes,
+                past_datetime.second
+            )
+            
+            topocentric_past = difference.at(t_past)
+            alt_past, _, _ = topocentric_past.altaz()
+            
+            if alt_past.degrees <= min_elevation:
+                # Found AOS - it's between this minute and the next
+                aos_time = self.ts.utc(
+                    past_datetime.year,
+                    past_datetime.month,
+                    past_datetime.day,
+                    past_datetime.hour + hours_adjust,
+                    total_minutes + 1,
+                    past_datetime.second
+                )
+                break
+        
+        # Find LOS (look forwards in time)
+        los_time = None
+        for minutes_ahead in range(1, 30):  # Look ahead up to 30 minutes
+            future_datetime = t_now.utc_datetime()
+            total_minutes = future_datetime.minute + minutes_ahead
+            hours_adjust = total_minutes // 60
+            minutes_remainder = total_minutes % 60
+            
+            t_future = self.ts.utc(
+                future_datetime.year,
+                future_datetime.month,
+                future_datetime.day,
+                future_datetime.hour + hours_adjust,
+                minutes_remainder,
+                future_datetime.second
+            )
+            
+            topocentric_future = difference.at(t_future)
+            alt_future, _, _ = topocentric_future.altaz()
+            
+            if alt_future.degrees <= min_elevation:
+                # Found LOS
+                los_time = t_future
+                break
+        
+        # Calculate duration - FIXED: Check if None explicitly
+        duration_minutes = 0
+        if aos_time is not None and los_time is not None:
+            aos_dt = aos_time.utc_datetime()
+            los_dt = los_time.utc_datetime()
+            duration_minutes = int((los_dt - aos_dt).total_seconds() / 60)
+        
+        return {
+            "aos_time": aos_time.utc_iso() if aos_time is not None else None,
+            "los_time": los_time.utc_iso() if los_time is not None else None,
+            "duration_minutes": duration_minutes,
+            "is_in_pass": True
+        }
