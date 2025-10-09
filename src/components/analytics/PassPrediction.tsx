@@ -1,6 +1,11 @@
 import { Card } from "@/components/ui/card";
 
-const PassPrediction = () => {
+interface PassPredictionProps {
+  handoffCount?: number;
+  stationsUsed?: number;
+}
+
+const PassPrediction = ({ handoffCount = 0, stationsUsed = 1 }: PassPredictionProps) => {
   const passes = [
     { startTime: "15:42:18", duration: "09:24", elevation: "78.2°", active: true },
     { startTime: "17:18:45", duration: "08:56", elevation: "65.4°", active: false },
@@ -39,6 +44,14 @@ const PassPrediction = () => {
         <h4 className="text-[10px] font-semibold tracking-wider uppercase text-secondary mb-2">
           STATISTICS
         </h4>
+        <div className="flex justify-between text-xs">
+          <span className="text-secondary">Total Handoffs</span>
+          <span className="font-mono text-amber-500">{handoffCount}</span>
+        </div>
+        <div className="flex justify-between text-xs">
+          <span className="text-secondary">Stations Used</span>
+          <span className="font-mono">{stationsUsed}</span>
+        </div>
         <div className="flex justify-between text-xs">
           <span className="text-secondary">Packets Sent</span>
           <span className="font-mono">2,847</span>

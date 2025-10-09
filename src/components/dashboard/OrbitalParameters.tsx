@@ -1,6 +1,10 @@
 import { Card } from "@/components/ui/card";
 
-const OrbitalParameters = () => {
+interface OrbitalParametersProps {
+  activeStation?: string;
+}
+
+const OrbitalParameters = ({ activeStation = 'Toronto' }: OrbitalParametersProps) => {
   const parameters = [
     { label: "Latitude", value: "45.2341°N" },
     { label: "Longitude", value: "79.4562°W" },
@@ -15,6 +19,13 @@ const OrbitalParameters = () => {
       <h3 className="text-xs font-semibold tracking-wider uppercase text-secondary mb-3">
         ORBITAL PARAMETERS
       </h3>
+      
+      <div className="mb-3 pb-2 border-b border-border">
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-secondary">Active Station</span>
+          <span className="text-xs font-mono text-primary">{activeStation}</span>
+        </div>
+      </div>
       
       <div className="space-y-2">
         {parameters.map((param) => (
