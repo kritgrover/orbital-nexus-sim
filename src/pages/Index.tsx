@@ -7,6 +7,7 @@ import MessageExchange from "@/components/dashboard/MessageExchange";
 import StationNetwork from "@/components/dashboard/StationNetwork";
 import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
 import PassPrediction from "@/components/analytics/PassPrediction";
+import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useState } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
@@ -85,6 +86,7 @@ const Index = () => {
                 handoffCount={handoffCount}
                 stationsUsed={stations.length}
               />
+              <TrafficFlowMonitor />
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
