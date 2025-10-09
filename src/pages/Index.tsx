@@ -1,5 +1,6 @@
 import Header from "@/components/Header";
 import GlobeView from "@/components/globe/GlobeView";
+import SkyView from "@/components/globe/SkyView";
 import LinkStatus from "@/components/dashboard/LinkStatus";
 import OrbitalParameters from "@/components/dashboard/OrbitalParameters";
 import MessageExchange from "@/components/dashboard/MessageExchange";
@@ -14,10 +15,15 @@ const Index = () => {
       
       <main className="flex-1">
         <ResizablePanelGroup direction="horizontal" className="h-full">
-          {/* Left Panel - Globe View */}
+          {/* Left Panel - Globe View & Sky View */}
           <ResizablePanel defaultSize={28} minSize={20} className="bg-panel">
-            <div className="h-full border-r border-border">
-              <GlobeView />
+            <div className="h-full border-r border-border flex flex-col">
+              <div className="flex-1 min-h-0">
+                <GlobeView />
+              </div>
+              <div className="h-[420px]">
+                <SkyView azimuth={127.8} elevation={42.3} isVisible={true} />
+              </div>
             </div>
           </ResizablePanel>
 
