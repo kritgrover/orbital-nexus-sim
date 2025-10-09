@@ -1,4 +1,4 @@
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useOrbitalTracking } from '@/hooks/useOrbitalTracking';
 import Header from "@/components/Header";
 import GlobeView from "@/components/globe/GlobeView";
 import SkyView from "@/components/globe/SkyView";
@@ -10,36 +10,60 @@ import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
 import PassPrediction from "@/components/analytics/PassPrediction";
 import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
 
 const Index = () => {
-  // WebSocket connection
-  const WS_URL = 'ws://localhost:8000/ws';
-  const { isConnected, connectionError } = useWebSocket(WS_URL);
+  // Only use orbital tracking connection - remove the duplicate /ws connection
+  const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
 
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
   const [activeStationId, setActiveStationId] = useState('toronto');
   const [handoffCount, setHandoffCount] = useState(0);
 
-  const handleStationSelect = (stationId: string) => {
-    setStations(prev => prev.map(s => ({
-      ...s,
-      isActive: s.id === stationId
-    })));
-    setActiveStationId(stationId);
-  };
+  // Update stations with real data from backend
+  useEffect(() => {
+    if (orbitalData?.stations) {
+      setStations(prevStations => 
+        prevStations.map(station => {
+          const backendStation = orbitalData.stations.find(s => s.id === station.id);
+          if (backendStation) {
+            return {
+              ...station,
+              isActive: orbitalData.active_station_id === station.id,
+              elevation: backendStation.look_angles?.elevation || 0,
+              nextPassTime: backendStation.next_pass_minutes > 0 
+                ? `${Math.floor(backendStation.next_pass_minutes / 60)}:${(backendStation.next_pass_minutes % 60).toString().padStart(2, '0')}`
+                : '--:--'
+            };
+          }
+          return station;
+        })
+      );
 
-  const handleHandoff = (fromStation: string, toStation: string) => {
-    setHandoffCount(prev => prev + 1);
-    console.log(`Handoff: ${fromStation} → ${toStation}`);
+      // Update active station from backend
+      if (orbitalData.active_station_id && orbitalData.active_station_id !== activeStationId) {
+        const oldStation = activeStationId;
+        setActiveStationId(orbitalData.active_station_id);
+        setHandoffCount(prev => prev + 1);
+        console.log(`🔄 Handoff: ${oldStation} → ${orbitalData.active_station_id}`);
+      }
+    }
+  }, [orbitalData, activeStationId]);
+
+  const handleStationSelect = (stationId: string) => {
+    setActiveStationId(stationId);
   };
 
   const activeStation = stations.find(s => s.id === activeStationId);
   
+  // Get active station data from orbital data with proper null checking
+  const activeStationData = orbitalData?.stations?.find(s => s.id === activeStationId);
+  
   return (
     <div className="min-h-screen flex flex-col">
-      <Header isConnected={isConnected} connectionError={connectionError} />
+      {/* Pass orbital connection status to header */}
+      <Header isConnected={orbitalConnected} connectionError={orbitalConnected ? null : "Connecting..."} />
       
       <main className="flex-1">
         <ResizablePanelGroup direction="horizontal" className="h-full">
@@ -50,14 +74,14 @@ const Index = () => {
                 <GlobeView 
                   stations={stations}
                   activeStationId={activeStationId}
-                  onHandoff={handleHandoff}
+                  orbitalData={orbitalData}
                 />
               </div>
               <div className="h-[420px]">
                 <SkyView 
-                  azimuth={activeStation?.elevation === 42.3 ? 127.8 : 85.3} 
-                  elevation={activeStation?.elevation || 42.3} 
-                  isVisible={true} 
+                  azimuth={activeStationData?.look_angles?.azimuth ?? 0} 
+                  elevation={activeStationData?.look_angles?.elevation ?? 0} 
+                  isVisible={activeStationData?.is_visible ?? false} 
                 />
               </div>
             </div>
@@ -90,7 +114,7 @@ const Index = () => {
               <LinkBudgetChart />
               <PassPrediction 
                 handoffCount={handoffCount}
-                stationsUsed={stations.length}
+                stationsUsed={stations.filter(s => s.isActive || s.elevation > 0).length}
               />
               <TrafficFlowMonitor />
             </div>

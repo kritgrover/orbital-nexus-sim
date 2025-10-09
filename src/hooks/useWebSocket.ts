@@ -1,10 +1,24 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 
-export const useWebSocket = (url: string) => {
+interface UseWebSocketReturn {
+  isConnected: boolean;
+  connectionError: string | null;
+  lastMessage: any;
+  sendMessage: (message: any) => void;
+}
+
+export const useWebSocket = (url: string): UseWebSocketReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [lastMessage, setLastMessage] = useState<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const sendMessage = useCallback((message: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+    }
+  }, []);
 
   useEffect(() => {
     const connect = () => {
@@ -13,18 +27,24 @@ export const useWebSocket = (url: string) => {
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log('✅ WebSocket connected');
+          console.log('✅ WebSocket connected:', url);
           setIsConnected(true);
           setConnectionError(null);
         };
 
         ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          console.log('📨 Received:', data);
-          
-          // Handle different message types
-          if (data.type === 'connection') {
-            console.log('Connection confirmed:', data);
+          try {
+            const data = JSON.parse(event.data);
+            setLastMessage(data);
+            
+            // Log different message types
+            if (data.type === 'orbital_update') {
+              // Don't log every update (too verbose)
+            } else {
+              console.log('📨 Received:', data.type);
+            }
+          } catch (e) {
+            console.error('Failed to parse message:', e);
           }
         };
 
@@ -63,5 +83,5 @@ export const useWebSocket = (url: string) => {
     };
   }, [url]);
 
-  return { isConnected, connectionError, ws: wsRef.current };
+  return { isConnected, connectionError, lastMessage, sendMessage };
 };
