@@ -1,3 +1,4 @@
+import { useWebSocket } from '@/hooks/useWebSocket';
 import Header from "@/components/Header";
 import GlobeView from "@/components/globe/GlobeView";
 import SkyView from "@/components/globe/SkyView";
@@ -13,6 +14,10 @@ import { useState } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
 
 const Index = () => {
+  // WebSocket connection
+  const WS_URL = 'ws://localhost:8000/ws';
+  const { isConnected, connectionError } = useWebSocket(WS_URL);
+
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
   const [activeStationId, setActiveStationId] = useState('toronto');
   const [handoffCount, setHandoffCount] = useState(0);
@@ -31,9 +36,10 @@ const Index = () => {
   };
 
   const activeStation = stations.find(s => s.id === activeStationId);
+  
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <Header isConnected={isConnected} connectionError={connectionError} />
       
       <main className="flex-1">
         <ResizablePanelGroup direction="horizontal" className="h-full">
