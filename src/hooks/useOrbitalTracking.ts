@@ -57,6 +57,21 @@ interface OrbitalParameters {
   is_in_pass: boolean;
 }
 
+interface LinkStatus {
+  signal_strength_dbm: number;
+  connection_state: "ACQUIRED" | "DEGRADED" | "IDLE";
+  latency_ms: number;
+  doppler_shift_khz: number;
+  snr_db: number;
+  range_km: number;
+}
+
+interface LinkBudgetHistoryPoint {
+  timestamp: string;
+  snr_db: number;
+  signal_strength_dbm: number;
+}
+
 export interface OrbitalData {
   timestamp: string;
   iss_position: ISSPosition;
@@ -66,6 +81,8 @@ export interface OrbitalData {
   visible_stations_count: number;
   min_elevation: number;
   orbital_parameters: OrbitalParameters | null;
+  link_status: LinkStatus | null;  // NEW
+  link_budget_history: LinkBudgetHistoryPoint[];  // NEW
 }
 
 export const useOrbitalTracking = () => {

@@ -92,7 +92,7 @@ const Index = () => {
           {/* Center Panel - Communication Dashboard */}
           <ResizablePanel defaultSize={42} minSize={30}>
             <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
-              <LinkStatus />
+              <LinkStatus linkStatus={orbitalData?.link_status ?? null} />
               <OrbitalParameters orbitalData={orbitalData} />
               <MessageExchange 
                 activeStationId={activeStationId}
@@ -111,7 +111,10 @@ const Index = () => {
           {/* Right Panel - Analytics */}
           <ResizablePanel defaultSize={30} minSize={20}>
             <div className="h-full p-4 space-y-4 overflow-y-auto">
-              <LinkBudgetChart />
+              <LinkBudgetChart 
+                linkBudgetHistory={orbitalData?.link_budget_history ?? []}
+                currentSNR={orbitalData?.link_status?.snr_db}
+              />
               <PassPrediction 
                 handoffCount={handoffCount}
                 stationsUsed={stations.filter(s => s.isActive || s.elevation > 0).length}

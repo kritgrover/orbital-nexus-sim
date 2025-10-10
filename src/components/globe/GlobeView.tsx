@@ -533,7 +533,6 @@ const GlobeView = ({
           </Button>
         </div>
         <div className="flex items-center gap-4 text-xs font-mono text-secondary">
-          <span>Rotation: {earthRotation.toFixed(0)}°</span>
           <div className="flex items-center gap-2">
             <Clock className="h-3 w-3" />
             <span>UTC {formatTime(orbitalData?.timestamp)}</span>
