@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Video, Globe, ExternalLink } from "lucide-react";
+import { useState } from "react";
 
 interface SkyViewProps {
   azimuth?: number;
@@ -11,173 +12,137 @@ const SkyView = ({
   elevation = 42.3, 
   isVisible = true 
 }: SkyViewProps) => {
-  const [trail, setTrail] = useState<Array<{ az: number; el: number }>>([]);
-  const centerX = 150;
-  const centerY = 150;
-  const radius = 130;
+  const [viewMode, setViewMode] = useState<'map' | 'stream'>('map');
+  const [streamSource, setStreamSource] = useState(0);
 
-  // Simulate ISS movement for trail
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTrail(prev => {
-        const newTrail = [...prev, { az: azimuth, el: elevation }];
-        // Keep only last 10 points
-        return newTrail.slice(-10);
-      });
-    }, 2000);
+  // Multiple stream sources to try
+  const streamSources = [
+    {
+      name: "NASA Live Stream",
+      url: "https://www.youtube.com/embed/iYmvCUonukw?autoplay=1&mute=1",
+      description: "High definition Earth view from ISS"
+    },
+    {
+      name: "Sen 4K Live",
+      url: "https://www.youtube.com/embed/fO9e9jnhYK8?autoplay=1&mute=1",
+      description: "24/7 ISS live feed"
+    },
+    {
+      name: "ISS Live Streaming",
+      url: "https://www.youtube.com/embed/Ra2CBPw1TOY?autoplay=1&mute=0",
+      description: "24/7 ISS live feed"
+    },
+    {
+      name: "ISS Live with Location Tracker",
+      url: "https://www.youtube.com/embed/bfnPzF8dZHY?autoplay=1&mute=1",
+      description: "24/7 ISS live feed"
+    }
+  ];
 
-    return () => clearInterval(interval);
-  }, [azimuth, elevation]);
+  const currentStream = streamSources[streamSource];
 
-  // Convert polar coordinates (azimuth, elevation) to cartesian (x, y)
-  const polarToCartesian = (az: number, el: number) => {
-    // Elevation: 90° (zenith) = center, 0° (horizon) = edge
-    const normalizedEl = Math.max(0, el);
-    const radiusAtEl = radius * (1 - normalizedEl / 90);
-    const azRad = ((az - 90) * Math.PI) / 180; // Adjust so 0° is North (top)
-    
-    return {
-      x: centerX + radiusAtEl * Math.cos(azRad),
-      y: centerY + radiusAtEl * Math.sin(azRad)
-    };
+  const handleNextStream = () => {
+    setStreamSource((prev) => (prev + 1) % streamSources.length);
   };
 
-  const issPos = polarToCartesian(azimuth, elevation);
-  const direction = elevation > 45 ? "OVERHEAD" : elevation > 0 ? "RISING" : "SETTING";
-
   return (
-    <div className="h-full flex flex-col border-t border-border">
-      <div className="px-4 py-3 border-b border-border">
-        <h2 className="text-xs font-semibold tracking-wider uppercase text-secondary">
-          SKY VIEW - TORONTO
-        </h2>
-      </div>
-
-      <div className="flex-1 flex items-center justify-center p-4">
-        <div className="relative" style={{ width: 300, height: 300 }}>
-          <svg width="300" height="300" className="absolute inset-0">
-            {/* Background */}
-            <circle cx={centerX} cy={centerY} r={radius} fill="#242833" />
-
-            {/* Elevation rings */}
-            {[30, 60, 90].map((el, i) => {
-              const r = radius * ((90 - el) / 90);
-              return (
-                <circle
-                  key={el}
-                  cx={centerX}
-                  cy={centerY}
-                  r={r}
-                  fill="none"
-                  stroke="#3a3f4b"
-                  strokeWidth="1"
-                />
-              );
-            })}
-
-            {/* Azimuth lines (every 30°) */}
-            {Array.from({ length: 12 }, (_, i) => {
-              const angle = (i * 30 * Math.PI) / 180 - Math.PI / 2;
-              const x2 = centerX + radius * Math.cos(angle);
-              const y2 = centerY + radius * Math.sin(angle);
-              return (
-                <line
-                  key={i}
-                  x1={centerX}
-                  y1={centerY}
-                  x2={x2}
-                  y2={y2}
-                  stroke="#3a3f4b"
-                  strokeWidth="1"
-                />
-              );
-            })}
-
-            {/* Cardinal directions */}
-            <text x={centerX} y={centerY - radius - 10} textAnchor="middle" className="text-xs fill-secondary font-mono">N</text>
-            <text x={centerX + radius + 10} y={centerY + 5} textAnchor="start" className="text-xs fill-secondary font-mono">E</text>
-            <text x={centerX} y={centerY + radius + 20} textAnchor="middle" className="text-xs fill-secondary font-mono">S</text>
-            <text x={centerX - radius - 10} y={centerY + 5} textAnchor="end" className="text-xs fill-secondary font-mono">W</text>
-
-            {/* Trail (last 10 positions) */}
-            {trail.length > 1 && trail.map((point, i) => {
-              if (point.el < 0) return null;
-              const pos = polarToCartesian(point.az, point.el);
-              const opacity = (i + 1) / trail.length * 0.5;
-              
-              if (i < trail.length - 1) {
-                const nextPos = polarToCartesian(trail[i + 1].az, trail[i + 1].el);
-                return (
-                  <line
-                    key={i}
-                    x1={pos.x}
-                    y1={pos.y}
-                    x2={nextPos.x}
-                    y2={nextPos.y}
-                    stroke="#00d4ff"
-                    strokeWidth="2"
-                    strokeOpacity={opacity}
-                  />
-                );
-              }
-              return null;
-            })}
-
-            {/* ISS position */}
-            {isVisible && elevation >= 0 ? (
-              <>
-                <circle
-                  cx={issPos.x}
-                  cy={issPos.y}
-                  r="6"
-                  fill="#00d4ff"
-                  className="animate-pulse"
-                />
-                <circle
-                  cx={issPos.x}
-                  cy={issPos.y}
-                  r="10"
-                  fill="none"
-                  stroke="#00d4ff"
-                  strokeWidth="1"
-                  opacity="0.5"
-                />
-              </>
-            ) : (
-              <>
-                <circle
-                  cx={centerX}
-                  cy={centerY + radius}
-                  r="6"
-                  fill="#6b7280"
-                  opacity="0.5"
-                />
-                <text
-                  x={centerX}
-                  y={centerY + radius + 25}
-                  textAnchor="middle"
-                  className="text-xs fill-secondary font-mono"
-                >
-                  NOT VISIBLE
-                </text>
-              </>
-            )}
-          </svg>
+    <div className="h-full flex flex-col border-t border-border bg-[#0a0e1a]">
+      <div className="px-4 py-3 border-b border-border bg-[#0f1729]">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold tracking-wider uppercase text-secondary">
+            ISS VIEW
+          </h2>
+          <div className="flex items-center gap-3">
+            {/* Toggle buttons */}
+            <div className="flex gap-1 bg-background/50 rounded p-1">
+              <button
+                onClick={() => setViewMode('map')}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  viewMode === 'map' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'text-secondary hover:text-foreground'
+                }`}
+                title="Map View"
+              >
+                <Globe className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => setViewMode('stream')}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  viewMode === 'stream' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'text-secondary hover:text-foreground'
+                }`}
+                title="Live Stream"
+              >
+                <Video className="w-3 h-3" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-xs font-mono text-success">LIVE</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="px-4 py-3 border-t border-border space-y-1">
+      <div className="flex-1 relative bg-black overflow-hidden">
+        {viewMode === 'map' ? (
+          /* ISS Tracker Map */
+          <iframe
+            src="https://isstracker.spaceflight.esa.int/"
+            width="100%"
+            height="100%"
+            className="absolute inset-0 border-0 block"
+            scrolling="no"
+            title="ISS Tracker"
+          />
+        ) : (
+          /* Live Stream with source selector */
+          <div className="absolute inset-0">
+            <iframe
+              key={streamSource} // Force reload when source changes
+              width="100%"
+              height="100%"
+              src={currentStream.url}
+              title={currentStream.name}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="absolute inset-0 border-0 block"
+              scrolling="no"
+            />
+            
+            {/* Stream source selector overlay */}
+            <div className="absolute top-2 left-2 right-2 flex items-center justify-between bg-black/80 backdrop-blur-sm rounded p-2 z-10">
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-foreground truncate">
+                  {currentStream.name}
+                </div>
+                <div className="text-[10px] text-secondary truncate">
+                  {currentStream.description}
+                </div>
+              </div>
+              <button
+                onClick={handleNextStream}
+                className="ml-2 px-2 py-1 bg-primary/20 hover:bg-primary/30 border border-primary/50 rounded text-xs font-mono text-primary transition-colors flex items-center gap-1"
+                title="Try another stream"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Status bar at bottom */}
+      <div className="px-4 py-3 border-t border-border bg-[#0f1729] space-y-1">
+        
         <div className="flex justify-between text-xs">
-          <span className="text-secondary">Azimuth</span>
-          <span className="font-mono">{azimuth.toFixed(1)}°</span>
-        </div>
-        <div className="flex justify-between text-xs">
-          <span className="text-secondary">Elevation</span>
-          <span className="font-mono">{elevation.toFixed(1)}°</span>
-        </div>
-        <div className="flex justify-between text-xs">
-          <span className="text-secondary">Direction</span>
-          <span className="font-mono text-primary">{direction}</span>
+          <span className="text-secondary"></span>
+          <span className={`font-mono ${isVisible ? 'text-success' : 'text-secondary'}`}>
+            {isVisible ? '🔗 TRACKING' : '⏳ WAITING'}
+          </span>
         </div>
       </div>
     </div>
