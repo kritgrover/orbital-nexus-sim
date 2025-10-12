@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from collections import deque
 from tle_fetcher import TLEFetcher
 from orbital_tracker import OrbitalTracker
-from link_budget_calculator import LinkBudgetCalculator  # NEW
+from link_budget_calculator import LinkBudgetCalculator
+from dtn_bundle_manager import DTNBundleManager, BundlePriority  # NEW
 
 app = FastAPI()
 
@@ -21,24 +22,31 @@ app.add_middleware(
 
 # Initialize services
 tle_fetcher = TLEFetcher()
-link_budget_calc = LinkBudgetCalculator()  # NEW
+link_budget_calc = LinkBudgetCalculator()
 
+# Ground stations
 # Multiple ground stations around the world
 GROUND_STATIONS = [
     {"id": "toronto", "name": "Toronto", "lat": 43.6532, "lon": -79.3832},
     {"id": "london", "name": "London", "lat": 51.5074, "lon": -0.1278},
     {"id": "tokyo", "name": "Tokyo", "lat": 35.6762, "lon": 139.6503},
     {"id": "sydney", "name": "Sydney", "lat": -33.8688, "lon": 151.2093},
-    {"id": "newyork", "name": "New York", "lat": 40.7128, "lon": -74.0060},
+    {"id": "washington", "name": "Washington DC", "lat": 38.9072, "lon": -77.0369},
     {"id": "singapore", "name": "Singapore", "lat": 1.3521, "lon": 103.8198},
+    {"id": "bengaluru", "name": "Bengaluru", "lat": 12.9716, "lon": 77.5946},
+    {"id": "saopaulo", "name": "São Paulo", "lat": -23.5505, "lon": -46.6333},
+    {"id": "moscow", "name": "Moscow", "lat": 55.7558, "lon": 37.6173},
 ]
 
-MIN_ELEVATION_FOR_VISIBILITY = -15.0
+MIN_ELEVATION_FOR_VISIBILITY = -5.0
+
+# Initialize DTN Bundle Manager
+dtn_manager = DTNBundleManager(GROUND_STATIONS)  # NEW
 
 @app.get("/")
 async def root():
     return {
-        "message": "ISS Orbital Tracking Backend",
+        "message": "ISS Orbital Tracking Backend with DTN",
         "stations": len(GROUND_STATIONS),
         "min_elevation": MIN_ELEVATION_FOR_VISIBILITY
     }
@@ -68,7 +76,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.websocket("/ws/orbital_tracking")
 async def orbital_tracking_websocket(websocket: WebSocket):
-    """Real-time ISS orbital tracking with link budget calculations"""
+    """Real-time ISS tracking with DTN bundle management"""
     await websocket.accept()
     print("✅ Client connected to /ws/orbital_tracking")
     
@@ -83,26 +91,24 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             await websocket.close()
             return
         
-        # Initialize orbital tracker
+        # Initialize tracker
         tracker = OrbitalTracker(tle)
-        
-        # Link budget history (last 5 minutes = 300 data points at 1Hz)
         link_budget_history = deque(maxlen=300)
         
-        # Send initial connection message
+        # Send initial connection
         await websocket.send_json({
             "type": "connection",
             "status": "connected",
-            "message": "Orbital tracking initialized",
+            "message": "Orbital tracking with DTN initialized",
             "stations": GROUND_STATIONS,
             "min_elevation": MIN_ELEVATION_FOR_VISIBILITY
         })
         
-        # Calculate orbital path once
+        # Calculate orbital path
         orbital_path = tracker.get_orbital_path(minutes=95, points=150)
         last_path_update = datetime.now(timezone.utc)
         
-        print("🚀 Starting orbital tracking stream with link budget calculations...")
+        print("🚀 Starting orbital tracking with DTN...")
         
         iteration = 0
         current_active_station = None
@@ -111,7 +117,7 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             iteration += 1
             now = datetime.now(timezone.utc)
             
-            # Get current ISS position
+            # Get ISS position
             iss_position = tracker.get_current_position()
             
             # Calculate for all stations
@@ -122,14 +128,12 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 look_angles = tracker.calculate_look_angles(station["lat"], station["lon"])
                 is_visible = look_angles["elevation"] > MIN_ELEVATION_FOR_VISIBILITY
                 
-                # Predict next pass
                 next_pass = tracker.predict_next_pass(
                     station["lat"], 
                     station["lon"],
                     min_elevation=MIN_ELEVATION_FOR_VISIBILITY
                 )
                 
-                # Calculate pass window if visible
                 pass_window = None
                 if is_visible:
                     pass_window = tracker.calculate_pass_window(
@@ -168,13 +172,29 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 stations_data.sort(key=lambda s: s["next_pass_minutes"] if s["next_pass_minutes"] > 0 else 999999)
                 current_active_station = None
             
+            # Process DTN bundles based on contacts
+            for station_data in stations_data:
+                # Find next visible station for forwarding
+                next_visible = None
+                if not station_data["is_visible"] and len(visible_stations) > 0:
+                    next_visible = visible_stations[0]["id"]
+                
+                dtn_manager.process_contact(
+                    station_data["id"],
+                    station_data["is_visible"],
+                    next_visible
+                )
+            
+            # Cleanup expired bundles every 60 seconds
+            if iteration % 60 == 0:
+                dtn_manager.cleanup_expired()
+            
             # Update orbital path every 60 seconds
             if (now - last_path_update).total_seconds() > 60:
                 orbital_path = tracker.get_orbital_path(minutes=95, points=150)
                 last_path_update = now
-                print("🔄 Updated orbital path")
             
-            # Build orbital parameters for active station
+            # Build orbital parameters
             active_station_data = None
             if current_active_station:
                 active_station_data = next(
@@ -182,7 +202,6 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     None
                 )
             
-            # Calculate orbital parameters
             orbital_parameters = None
             if active_station_data:
                 orbital_parameters = {
@@ -202,21 +221,18 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "is_in_pass": active_station_data["pass_window"]["is_in_pass"] if active_station_data["pass_window"] else False
                 }
             
-            # NEW: Calculate link budget for active station
-            # NEW: Calculate link budget for active station
+            # Calculate link budget
             link_status = None
             if active_station_data:
-                # Calculate actual radial velocity from orbital mechanics
                 radial_velocity_data = tracker.calculate_radial_velocity(
                     active_station_data["lat"],
                     active_station_data["lon"]
                 )
                 
-                # Calculate link budget with TRUE radial velocity
                 link_budget = link_budget_calc.calculate_link_budget(
                     active_station_data["look_angles"]["range_km"],
                     active_station_data["look_angles"]["elevation"],
-                    radial_velocity_data["radial_velocity_kmps"]  # This is the correct value!
+                    radial_velocity_data["radial_velocity_kmps"]
                 )
                 
                 link_status = {
@@ -226,36 +242,27 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     "doppler_shift_khz": link_budget["doppler_shift_khz"],
                     "snr_db": link_budget["snr_db"],
                     "range_km": link_budget["range_km"],
-                    "radial_velocity_kmps": radial_velocity_data["radial_velocity_kmps"]  # For debugging
+                    "radial_velocity_kmps": radial_velocity_data["radial_velocity_kmps"]
                 }
                 
-                # Add to history
                 link_budget_history.append({
                     "timestamp": now.isoformat(),
                     "snr_db": link_budget["snr_db"],
                     "signal_strength_dbm": link_budget["signal_strength_dbm"]
                 })
             else:
-                # No active station - idle state
                 link_status = {
                     "signal_strength_dbm": -120.0,
                     "connection_state": "IDLE",
                     "latency_ms": 0.0,
                     "doppler_shift_khz": 0.0,
                     "snr_db": -50.0,
-                    "range_km": 0.0
+                    "range_km": 0.0,
+                    "radial_velocity_kmps": 0.0
                 }
             
-            # Log every 10 seconds
-            if iteration % 10 == 0:
-                visible_count = len(visible_stations)
-                if visible_count > 0:
-                    print(f"📍 ISS visible from {visible_count} station(s)")
-                    if link_status:
-                        print(f"   SNR: {link_status['snr_db']:.1f} dB, Signal: {link_status['signal_strength_dbm']:.1f} dBm")
-                else:
-                    next_station = stations_data[0]
-                    print(f"⏰ Next: {next_station['name']} in {next_station['next_pass_minutes']} min")
+            # Get DTN bundle queues for all stations
+            dtn_queues = dtn_manager.get_all_queues()
             
             # Prepare data packet
             data = {
@@ -268,8 +275,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "visible_stations_count": len(visible_stations),
                 "min_elevation": MIN_ELEVATION_FOR_VISIBILITY,
                 "orbital_parameters": orbital_parameters,
-                "link_status": link_status,  # NEW
-                "link_budget_history": list(link_budget_history)  # NEW
+                "link_status": link_status,
+                "link_budget_history": list(link_budget_history),
+                "dtn_queues": dtn_queues  # NEW
             }
             
             # Send data
@@ -279,11 +287,27 @@ async def orbital_tracking_websocket(websocket: WebSocket):
             await asyncio.sleep(1)
             
     except WebSocketDisconnect:
-        print("❌ Client disconnected from /ws/orbital_tracking")
+        print("❌ Client disconnected")
     except Exception as e:
-        print(f"❌ Error in orbital tracking: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
+
+# NEW: Endpoint to create bundles
+@app.post("/api/bundle/create")
+async def create_bundle(request: dict):
+    """Create a new DTN bundle"""
+    try:
+        bundle = dtn_manager.create_bundle(
+            source_station=request.get("source_station", "toronto"),
+            destination=request.get("destination", "ISS"),
+            payload=request.get("payload", ""),
+            priority=request.get("priority", "NORMAL"),
+            ttl_hours=request.get("ttl_hours", 24)
+        )
+        return {"success": True, "bundle": bundle.to_dict()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

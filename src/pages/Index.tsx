@@ -20,6 +20,7 @@ const Index = () => {
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
   const [activeStationId, setActiveStationId] = useState('toronto');
   const [handoffCount, setHandoffCount] = useState(0);
+  const [handoffInProgress, setHandoffInProgress] = useState(false);
 
   // Update stations with real data from backend
   useEffect(() => {
@@ -41,12 +42,18 @@ const Index = () => {
         })
       );
 
-      // Update active station from backend
+      // Update active station and detect handoff
       if (orbitalData.active_station_id && orbitalData.active_station_id !== activeStationId) {
         const oldStation = activeStationId;
         setActiveStationId(orbitalData.active_station_id);
         setHandoffCount(prev => prev + 1);
+        setHandoffInProgress(true);
         console.log(`🔄 Handoff: ${oldStation} → ${orbitalData.active_station_id}`);
+        
+        // Clear handoff indicator after 2 seconds
+        setTimeout(() => {
+          setHandoffInProgress(false);
+        }, 2000);
       }
     }
   }, [orbitalData, activeStationId]);
@@ -98,10 +105,16 @@ const Index = () => {
                 activeStationId={activeStationId}
                 stationColor={activeStation?.color || '#4ade80'}
                 handoffCount={handoffCount}
+                linkStatus={orbitalData?.link_status ?? null}
+                dtnQueues={orbitalData?.dtn_queues ?? {}}
               />
               <StationNetwork 
                 stations={stations}
                 onStationSelect={handleStationSelect}
+                dtnQueues={orbitalData?.dtn_queues ?? {}}
+                visibleStationsCount={orbitalData?.visible_stations_count ?? 0}
+                handoffInProgress={handoffInProgress}
+                activeStationId={activeStationId}
               />
             </div>
           </ResizablePanel>

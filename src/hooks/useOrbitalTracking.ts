@@ -72,6 +72,23 @@ interface LinkBudgetHistoryPoint {
   signal_strength_dbm: number;
 }
 
+interface DTNBundle {
+  bundle_id: string;
+  bundle_id_short: string;
+  source_station: string;
+  destination_station: string;
+  payload: string;
+  priority: "EXPEDITED" | "NORMAL" | "BULK";
+  status: "QUEUED" | "TRANSMITTING" | "DELIVERED" | "FORWARDED" | "EXPIRED";
+  created_at: string;
+  ttl_hours: number;
+  current_custodian: string;
+  forwarded_to: string | null;
+  delivered_at: string | null;
+  hops: string[];
+  age_seconds: number;
+}
+
 export interface OrbitalData {
   timestamp: string;
   iss_position: ISSPosition;
@@ -81,8 +98,9 @@ export interface OrbitalData {
   visible_stations_count: number;
   min_elevation: number;
   orbital_parameters: OrbitalParameters | null;
-  link_status: LinkStatus | null;  // NEW
-  link_budget_history: LinkBudgetHistoryPoint[];  // NEW
+  link_status: LinkStatus | null;
+  link_budget_history: LinkBudgetHistoryPoint[];
+  dtn_queues: Record<string, DTNBundle[]>;  // NEW
 }
 
 export const useOrbitalTracking = () => {
