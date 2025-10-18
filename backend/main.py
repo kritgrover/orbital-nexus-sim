@@ -1,6 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+from pydantic import BaseModel
 import json
 from datetime import datetime, timezone
 from collections import deque
@@ -11,10 +13,17 @@ from dtn_bundle_manager import DTNBundleManager, BundlePriority  # NEW
 
 app = FastAPI()
 
+class BundleCreateRequest(BaseModel):
+    source_station: str
+    destination: str = "ISS"
+    payload: str
+    priority: str = "NORMAL"
+    ttl_hours: int = 24
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -172,17 +181,48 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 stations_data.sort(key=lambda s: s["next_pass_minutes"] if s["next_pass_minutes"] > 0 else 999999)
                 current_active_station = None
             
+
             # Process DTN bundles based on contacts
             for station_data in stations_data:
-                # Find next visible station for forwarding
-                next_visible = None
-                if not station_data["is_visible"] and len(visible_stations) > 0:
-                    next_visible = visible_stations[0]["id"]
+                # Find best next hop for forwarding
+                next_hop_station = None
+                
+                if not station_data["is_visible"]:
+                    # Get current station's next pass time
+                    current_station_next_pass = station_data["next_pass_minutes"]
+                    
+                    # Only consider forwarding if current station has a pass scheduled
+                    if current_station_next_pass > 0:
+                        # Get bundle hops to avoid loops
+                        queue = dtn_manager.station_queues.get(station_data["id"], [])
+                        
+                        if queue:
+                            # Check first bundle's hops to avoid routing loops
+                            first_bundle_id = queue[0]
+                            bundle = dtn_manager.bundles.get(first_bundle_id)
+                            visited_stations = bundle.hops if bundle else []
+                        else:
+                            visited_stations = []
+                        
+                        # Find stations with SOONER passes than current station
+                        better_stations = [
+                            s for s in stations_data 
+                            if s["id"] != station_data["id"] 
+                            and s["id"] not in visited_stations  # Avoid loops
+                            and s["next_pass_minutes"] > 0  # Has upcoming pass
+                            and s["next_pass_minutes"] < current_station_next_pass  # SOONER than us
+                        ]
+                        
+                        if better_stations:
+                            # Forward to the station with the soonest pass
+                            better_stations.sort(key=lambda s: s["next_pass_minutes"])
+                            next_hop_station = better_stations[0]["id"]
+                        # else: No better option, keep bundle here and wait for our own pass
                 
                 dtn_manager.process_contact(
                     station_data["id"],
                     station_data["is_visible"],
-                    next_visible
+                    next_hop_station
                 )
             
             # Cleanup expired bundles every 60 seconds
@@ -293,20 +333,36 @@ async def orbital_tracking_websocket(websocket: WebSocket):
         import traceback
         traceback.print_exc()
 
-# NEW: Endpoint to create bundles
+# Replace the endpoint with both OPTIONS and POST handlers
+@app.options("/api/bundle/create")
+async def bundle_create_options():
+    """Handle CORS preflight for bundle creation"""
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        }
+    )
+
 @app.post("/api/bundle/create")
-async def create_bundle(request: dict):
+async def create_bundle(request: BundleCreateRequest):
     """Create a new DTN bundle"""
     try:
+        print(f"📦 Received bundle request: {request.source_station} -> {request.destination}")
         bundle = dtn_manager.create_bundle(
-            source_station=request.get("source_station", "toronto"),
-            destination=request.get("destination", "ISS"),
-            payload=request.get("payload", ""),
-            priority=request.get("priority", "NORMAL"),
-            ttl_hours=request.get("ttl_hours", 24)
+            source_station=request.source_station,
+            destination=request.destination,
+            payload=request.payload,
+            priority=request.priority,
+            ttl_hours=request.ttl_hours
         )
         return {"success": True, "bundle": bundle.to_dict()}
     except Exception as e:
+        print(f"❌ Error creating bundle: {e}")
+        import traceback
+        traceback.print_exc()
         return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":

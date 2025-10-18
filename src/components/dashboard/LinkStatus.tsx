@@ -38,7 +38,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
   const SignalIcon = signalQuality.icon;
 
   // Determine if approaching or receding
-  const isApproaching = dopplerShift > 0;
+  const isApproaching = dopplerShift < 0;
   
   // Doppler shift bar position (scale: -10 kHz to +10 kHz)
   const dopplerPercent = Math.max(0, Math.min(100, ((dopplerShift + 10) / 20) * 100));
@@ -188,7 +188,7 @@ const LinkStatus = ({ linkStatus }: LinkStatusProps) => {
         <div className="flex justify-center mt-1">
           <span className={`text-[9px] font-mono ${isApproaching ? 'text-[#00d4ff]' : 'text-[#fbbf24]'}`}>
             {Math.abs(dopplerShift) > 0.01 
-              ? (isApproaching ? '← APPROACHING' : 'RECEDING →')
+              ? (isApproaching ? '← APPROACHING (Blue Shift)' : 'RECEDING → (Red Shift)')
               : 'STATIONARY'}
           </span>
         </div>

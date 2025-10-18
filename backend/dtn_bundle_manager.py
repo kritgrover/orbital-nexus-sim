@@ -100,6 +100,11 @@ class DTNBundleManager:
         
         bundle = self.bundles[bundle_id]
         
+        # NEW: Prevent forwarding loops - don't send to stations we've already visited
+        if to_station in bundle.hops:
+            print(f"⚠️  Bundle {bundle_id[:8]} loop detected! Not forwarding {from_station} → {to_station}")
+            return False
+        
         # Mark as transmitting
         bundle.status = BundleStatus.TRANSMITTING
         

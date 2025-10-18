@@ -5,8 +5,6 @@ import { Send, CheckCircle, XCircle, Clock, Package, Zap } from "lucide-react";
 import { useState, useEffect } from "react";
 import ProtocolStack from "./ProtocolStack";
 
-const API_BASE_URL = 'http://localhost:8000';
-
 interface DTNBundle {
   bundle_id: string;
   bundle_id_short: string;
@@ -43,6 +41,8 @@ interface Message {
   status?: string;
 }
 
+const API_BASE_URL = 'http://localhost:8000';
+
 const MessageExchange = ({ 
   activeStationId, 
   stationColor, 
@@ -61,6 +61,7 @@ const MessageExchange = ({
   const [bundlePriority, setBundlePriority] = useState<"EXPEDITED" | "NORMAL" | "BULK">("NORMAL");
 
   const isConnected = linkStatus?.connection_state === "ACQUIRED" || linkStatus?.connection_state === "DEGRADED";
+  const isTorontoActive = activeStationId === "toronto" && isConnected;
   
   // Get current station's bundle queue
   const stationQueue = dtnQueues?.[activeStationId] || [];
@@ -83,7 +84,6 @@ const MessageExchange = ({
   useEffect(() => {
     if (mode === "DTN" && stationQueue.length > 0) {
       const interval = setInterval(() => {
-        // Check for delivered bundles
         const deliveredBundles = stationQueue.filter(b => 
           b.status === "DELIVERED" && 
           !messages.some(m => m.bundleId === b.bundle_id)
@@ -114,8 +114,8 @@ const MessageExchange = ({
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
 
     if (mode === "TCP") {
-      // TCP Mode - requires active connection
-      if (!isConnected) {
+      // TCP Mode - requires Toronto to be active
+      if (!isTorontoActive) {
         setMessages(prev => [...prev, {
           text: `[${stationName}] GND> ${message}`,
           success: false,
@@ -238,13 +238,13 @@ const MessageExchange = ({
   };
 
   return (
-    <Card className="p-4 flex h-[320px]">
+    <Card className="p-4 flex h-[640px]">
       {/* Protocol Stack - Left side */}
       <div className="w-32 flex-shrink-0 border-r border-border pr-3 mr-3">
         <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
           PROTOCOL
         </div>
-        <ProtocolStack direction={protocolDirection} />
+        <ProtocolStack direction={protocolDirection} mode={mode} />
       </div>
 
       {/* Message Terminal - Right side */}
@@ -277,12 +277,12 @@ const MessageExchange = ({
           <div className="flex items-center gap-2">
             {mode === "TCP" && (
               <div className={`flex items-center gap-1 text-xs font-mono ${
-                isConnected ? "text-success" : "text-destructive"
+                isTorontoActive ? "text-success" : "text-destructive"
               }`}>
                 <div className={`w-2 h-2 rounded-full ${
-                  isConnected ? "bg-success animate-pulse" : "bg-destructive"
+                  isTorontoActive ? "bg-success animate-pulse" : "bg-destructive"
                 }`} />
-                {isConnected ? "ONLINE" : "OFFLINE"}
+                {isTorontoActive ? "ONLINE" : "OFFLINE"}
               </div>
             )}
             {mode === "DTN" && (
@@ -294,12 +294,12 @@ const MessageExchange = ({
           </div>
         </div>
 
-        {/* Message Log */}
-        <div className="flex-1 terminal p-2 overflow-y-auto space-y-1 mb-2">
+        {/* Message Log - DOUBLED IN SIZE */}
+        <div className="flex-1 terminal p-3 overflow-y-auto space-y-2 mb-3">
           {messages.map((msg, idx) => (
             <div 
               key={idx} 
-              className="flex items-start gap-2 text-xs font-mono"
+              className="flex items-start gap-2 text-sm font-mono"
             >
               {getStatusIcon(msg)}
               <div className="flex-1 min-w-0">
@@ -309,20 +309,20 @@ const MessageExchange = ({
                   {msg.text}
                 </span>
                 {msg.bundleId && (
-                  <div className="text-[10px] text-secondary mt-0.5">
+                  <div className="text-xs text-secondary mt-1">
                     [Bundle: {msg.bundleId}] [Priority: {msg.priority}] [TTL: 24h]
                     {msg.status && ` [${msg.status}]`}
                   </div>
                 )}
               </div>
-              <span className="text-terminal-text/60 text-[10px] flex-shrink-0">{msg.time}</span>
+              <span className="text-terminal-text/60 text-xs flex-shrink-0">{msg.time}</span>
             </div>
           ))}
         </div>
 
-        {/* DTN Bundle Queue (only show in DTN mode) */}
+        {/* DTN Bundle Queue */}
         {mode === "DTN" && queuedBundles.length > 0 && (
-          <div className="mb-2 p-2 bg-background/50 rounded border border-border">
+          <div className="mb-3 p-2 bg-background/50 rounded border border-border">
             <div className="text-[9px] font-semibold tracking-wider uppercase text-secondary mb-2">
               BUNDLE QUEUE ({queuedBundles.length})
             </div>
@@ -345,75 +345,75 @@ const MessageExchange = ({
           </div>
         )}
 
-        {/* Input Area */}
-        <div className="space-y-2">
-          {mode === "DTN" && (
-            <div className="flex gap-1">
-              <button
-                onClick={() => setBundlePriority("EXPEDITED")}
-                className={`flex-1 px-2 py-1 text-[10px] font-mono rounded transition-colors ${
-                  bundlePriority === "EXPEDITED"
-                    ? "bg-red-500/30 border border-red-500 text-red-500"
-                    : "bg-background/50 border border-border text-secondary hover:text-foreground"
-                }`}
-              >
-                EXPEDITED
-              </button>
-              <button
-                onClick={() => setBundlePriority("NORMAL")}
-                className={`flex-1 px-2 py-1 text-[10px] font-mono rounded transition-colors ${
-                  bundlePriority === "NORMAL"
-                    ? "bg-cyan-500/30 border border-cyan-500 text-cyan-500"
-                    : "bg-background/50 border border-border text-secondary hover:text-foreground"
-                }`}
-              >
-                NORMAL
-              </button>
-              <button
-                onClick={() => setBundlePriority("BULK")}
-                className={`flex-1 px-2 py-1 text-[10px] font-mono rounded transition-colors ${
-                  bundlePriority === "BULK"
-                    ? "bg-gray-500/30 border border-gray-500 text-gray-500"
-                    : "bg-background/50 border border-border text-secondary hover:text-foreground"
-                }`}
-              >
-                BULK
-              </button>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <Input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-              placeholder={mode === "TCP" ? "Enter uplink message..." : "Enter bundle payload..."}
-              className="flex-1 h-8 text-xs font-mono bg-terminal-bg text-terminal-text border-muted"
-              disabled={mode === "TCP" && !isConnected}
-            />
-            <Button 
-              onClick={handleSend}
-              variant="outline" 
-              size="sm" 
-              className="h-8 px-3 text-xs"
-              disabled={mode === "TCP" && !isConnected}
+        {/* Priority Selection for DTN */}
+        {mode === "DTN" && (
+          <div className="flex gap-1 mb-2">
+            <button
+              onClick={() => setBundlePriority("EXPEDITED")}
+              className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
+                bundlePriority === "EXPEDITED"
+                  ? "bg-red-500/30 border border-red-500 text-red-500"
+                  : "bg-background/50 border border-border text-secondary hover:text-foreground"
+              }`}
             >
-              <Send className="h-3 w-3 mr-1" />
-              {mode === "TCP" ? "SEND" : "QUEUE"}
-            </Button>
+              EXPEDITED
+            </button>
+            <button
+              onClick={() => setBundlePriority("NORMAL")}
+              className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
+                bundlePriority === "NORMAL"
+                  ? "bg-cyan-500/30 border border-cyan-500 text-cyan-500"
+                  : "bg-background/50 border border-border text-secondary hover:text-foreground"
+              }`}
+            >
+              NORMAL
+            </button>
+            <button
+              onClick={() => setBundlePriority("BULK")}
+              className={`flex-1 px-2 py-1.5 text-xs font-mono rounded transition-colors ${
+                bundlePriority === "BULK"
+                  ? "bg-gray-500/30 border border-gray-500 text-gray-500"
+                  : "bg-background/50 border border-border text-secondary hover:text-foreground"
+              }`}
+            >
+              BULK
+            </button>
           </div>
+        )}
 
-          {mode === "TCP" && !isConnected && (
-            <div className="text-[10px] text-destructive font-mono">
-              ⚠ No active link - TCP transmission unavailable
-            </div>
-          )}
-          {mode === "DTN" && (
-            <div className="text-[10px] text-cyan-500 font-mono">
-              ✓ Bundle will be queued and forwarded when contact available
-            </div>
-          )}
+        {/* Input Area */}
+        <div className="flex gap-2 mb-2">
+          <Input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder={mode === "TCP" ? "Enter uplink message..." : "Enter bundle payload..."}
+            className="flex-1 h-9 text-sm font-mono bg-terminal-bg text-terminal-text border-muted"
+            disabled={mode === "TCP" && !isTorontoActive}
+          />
+          <Button 
+            onClick={handleSend}
+            variant="outline" 
+            size="sm" 
+            className="h-9 px-4 text-sm"
+            disabled={mode === "TCP" && !isTorontoActive}
+          >
+            <Send className="h-4 w-4 mr-1" />
+            {mode === "TCP" ? "SEND" : "QUEUE"}
+          </Button>
         </div>
+
+        {/* Status Messages */}
+        {mode === "TCP" && !isTorontoActive && (
+          <div className="text-xs text-destructive font-mono">
+            ⚠ TCP connection only established if current station is Toronto
+          </div>
+        )}
+        {mode === "DTN" && (
+          <div className="text-xs text-cyan-500 font-mono">
+            ✓ Bundle will be queued and forwarded when contact available
+          </div>
+        )}
       </div>
     </Card>
   );
