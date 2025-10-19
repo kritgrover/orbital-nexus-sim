@@ -89,6 +89,16 @@ interface DTNBundle {
   age_seconds: number;
 }
 
+interface CustodyAck {
+  type: "custody_ack";
+  bundle_id: string;
+  bundle_id_short: string;
+  from_station: string;
+  to_station: string;
+  ack_type: "custody_accepted" | "delivered";
+  timestamp: string;
+}
+
 export interface OrbitalData {
   timestamp: string;
   iss_position: ISSPosition;
@@ -100,7 +110,8 @@ export interface OrbitalData {
   orbital_parameters: OrbitalParameters | null;
   link_status: LinkStatus | null;
   link_budget_history: LinkBudgetHistoryPoint[];
-  dtn_queues: Record<string, DTNBundle[]>;  // NEW
+  dtn_queues: Record<string, DTNBundle[]>;
+  custody_acks: CustodyAck[];
 }
 
 export const useOrbitalTracking = () => {

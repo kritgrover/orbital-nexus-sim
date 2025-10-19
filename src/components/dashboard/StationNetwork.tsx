@@ -43,14 +43,14 @@ const StationNetwork = ({
 
   // Highlight active station during handoff
   useEffect(() => {
-    if (handoffInProgress && activeStationId) {
+    if (activeStationId) {
       setHighlightStation(activeStationId);
       const timer = setTimeout(() => {
         setHighlightStation(null);
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [handoffInProgress, activeStationId]);
+  }, [activeStationId]);
 
   const toggleExpand = (stationId: string) => {
     setExpandedStation(expandedStation === stationId ? null : stationId);

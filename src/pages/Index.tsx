@@ -107,6 +107,7 @@ const Index = () => {
                 handoffCount={handoffCount}
                 linkStatus={orbitalData?.link_status ?? null}
                 dtnQueues={orbitalData?.dtn_queues ?? {}}
+                custodyAcks={orbitalData?.custody_acks ?? []}  // NEW
               />
               <StationNetwork 
                 stations={stations}

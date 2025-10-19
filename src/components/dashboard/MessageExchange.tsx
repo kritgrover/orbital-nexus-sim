@@ -18,6 +18,16 @@ interface DTNBundle {
   age_seconds: number;
 }
 
+interface CustodyAck {
+  type: "custody_ack";
+  bundle_id: string;
+  bundle_id_short: string;
+  from_station: string;
+  to_station: string;
+  ack_type: "custody_accepted" | "delivered";
+  timestamp: string;
+}
+
 interface MessageExchangeProps {
   activeStationId: string;
   stationColor: string;
@@ -26,6 +36,7 @@ interface MessageExchangeProps {
     connection_state: "ACQUIRED" | "DEGRADED" | "IDLE";
   } | null;
   dtnQueues?: Record<string, DTNBundle[]>;
+  custodyAcks?: CustodyAck[];
 }
 
 type MessageMode = "TCP" | "DTN";
@@ -39,6 +50,8 @@ interface Message {
   bundleId?: string;
   priority?: string;
   status?: string;
+  isAck?: boolean;  // NEW
+  ackType?: "custody_accepted" | "delivered";  // NEW
 }
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -48,7 +61,8 @@ const MessageExchange = ({
   stationColor, 
   handoffCount,
   linkStatus,
-  dtnQueues
+  dtnQueues,
+  custodyAcks = []
 }: MessageExchangeProps) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -106,6 +120,36 @@ const MessageExchange = ({
       return () => clearInterval(interval);
     }
   }, [mode, stationQueue, messages]);
+
+  // NEW: Process custody ACKs
+  useEffect(() => {
+    if (custodyAcks && custodyAcks.length > 0) {
+      custodyAcks.forEach(ack => {
+        // Only show ACK if it's relevant to currently displayed stations
+        const ackText = ack.ack_type === "delivered"
+          ? `◀ ACK: Bundle ${ack.bundle_id_short} delivered to ${ack.from_station.toUpperCase()}`
+          : `◀ ACK: ${ack.from_station.toUpperCase()} accepted custody of ${ack.bundle_id_short}`;
+        
+        setMessages(prev => {
+          // Avoid duplicate ACKs
+          if (prev.some(m => m.isAck && m.bundleId === ack.bundle_id_short && m.time === new Date(ack.timestamp).toLocaleTimeString('en-US', { hour12: false }))) {
+            return prev;
+          }
+          
+          return [...prev, {
+            text: ackText,
+            success: true,
+            time: new Date(ack.timestamp).toLocaleTimeString('en-US', { hour12: false }),
+            station: ack.to_station,
+            mode: "DTN",
+            bundleId: ack.bundle_id_short,
+            isAck: true,
+            ackType: ack.ack_type
+          }];
+        });
+      });
+    }
+  }, [custodyAcks]);
 
   const handleSend = async () => {
     if (!message.trim()) return;
@@ -227,6 +271,10 @@ const MessageExchange = ({
   };
 
   const getStatusIcon = (msg: Message) => {
+    if (msg.isAck) {
+      return <CheckCircle className="w-3 h-3 text-cyan-400" />;  // Cyan for ACKs
+    }
+
     if (msg.mode === "DTN") {
       if (msg.status === "DELIVERED") return <CheckCircle className="w-3 h-3 text-success" />;
       if (msg.status === "TRANSMITTING") return <Zap className="w-3 h-3 text-amber-500 animate-pulse" />;
@@ -304,11 +352,13 @@ const MessageExchange = ({
               {getStatusIcon(msg)}
               <div className="flex-1 min-w-0">
                 <span className={`${
+                  msg.isAck ? 'text-cyan-400' :
                   msg.success ? 'text-terminal-text' : 'text-destructive'
                 }`}>
                   {msg.text}
                 </span>
-                {msg.bundleId && (
+                {/* Only show bundle details for non-ACK messages */}
+                {msg.bundleId && !msg.isAck && (
                   <div className="text-xs text-secondary mt-1">
                     [Bundle: {msg.bundleId}] [Priority: {msg.priority}] [TTL: 24h]
                     {msg.status && ` [${msg.status}]`}

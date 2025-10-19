@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -61,6 +61,7 @@ class DTNBundleManager:
         self.stations = {s["id"]: s["name"] for s in stations}
         self.bundles: Dict[str, DTNBundle] = {}
         self.station_queues: Dict[str, List[str]] = {sid: [] for sid in self.stations.keys()}
+        self.pending_acks: List[Dict] = []  # NEW: Queue of ACKs to send
         
         print(f"📦 DTN Bundle Manager initialized with {len(self.stations)} stations")
     
@@ -93,17 +94,20 @@ class DTNBundleManager:
         print(f"📦 Created bundle {bundle_id[:8]} at {source_station}: {payload[:30]}...")
         return bundle
     
-    def transmit_bundle(self, bundle_id: str, from_station: str, to_station: str) -> bool:
-        """Transmit bundle from one station to another (or ISS)"""
+    def transmit_bundle(self, bundle_id: str, from_station: str, to_station: str) -> Optional[Tuple[bool, Optional[Dict]]]:
+        """
+        Transmit bundle from one station to another (or ISS)
+        Returns: (success, ack_message) where ack_message is dict if ACK should be sent
+        """
         if bundle_id not in self.bundles:
-            return False
+            return None
         
         bundle = self.bundles[bundle_id]
         
-        # NEW: Prevent forwarding loops - don't send to stations we've already visited
+        # Prevent forwarding loops - don't send to stations we've already visited
         if to_station in bundle.hops:
             print(f"⚠️  Bundle {bundle_id[:8]} loop detected! Not forwarding {from_station} → {to_station}")
-            return False
+            return (False, None)
         
         # Mark as transmitting
         bundle.status = BundleStatus.TRANSMITTING
@@ -120,10 +124,22 @@ class DTNBundleManager:
                 self.station_queues[from_station].remove(bundle_id)
             
             print(f"✅ Bundle {bundle_id[:8]} delivered to {to_station}")
-            return True
+            
+            # NEW: Generate ACK for delivery
+            ack = {
+                "type": "custody_ack",
+                "bundle_id": bundle_id,
+                "bundle_id_short": bundle_id[:8],
+                "from_station": to_station,
+                "to_station": from_station,
+                "ack_type": "delivered",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            return (True, ack)
         else:
             # Forwarded to another station
             bundle.status = BundleStatus.FORWARDED
+            previous_custodian = bundle.current_custodian
             bundle.current_custodian = to_station
             bundle.forwarded_to = to_station
             bundle.hops.append(to_station)
@@ -137,7 +153,41 @@ class DTNBundleManager:
             bundle.status = BundleStatus.QUEUED
             
             print(f"📨 Bundle {bundle_id[:8]} forwarded {from_station} → {to_station}")
-            return True
+            
+            # NEW: Generate ACK for custody transfer
+            ack = {
+                "type": "custody_ack",
+                "bundle_id": bundle_id,
+                "bundle_id_short": bundle_id[:8],
+                "from_station": to_station,
+                "to_station": previous_custodian,
+                "ack_type": "custody_accepted",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            return (True, ack)
+    
+    def process_custody_ack(self, ack: Dict) -> None:
+        """
+        Process a custody acknowledgement
+        When a station receives an ACK, it can safely delete its copy of the bundle
+        """
+        bundle_id = ack["bundle_id"]
+        to_station = ack["to_station"]
+        
+        # The previous custodian no longer needs to keep the bundle
+        # (already removed from queue during transmit_bundle)
+        print(f"✓ Station {to_station} received ACK for bundle {ack['bundle_id_short']}")
+    
+    def get_pending_acks(self) -> List[Dict]:
+        """Get and clear pending ACKs"""
+        acks = self.pending_acks.copy()
+        self.pending_acks.clear()
+        return acks
+    
+    def queue_ack(self, ack: Dict) -> None:
+        """Queue an ACK to be sent"""
+        if ack:
+            self.pending_acks.append(ack)
     
     def get_station_queue(self, station_id: str) -> List[Dict]:
         """Get all bundles in a station's queue"""
@@ -181,8 +231,13 @@ class DTNBundleManager:
             # ISS is overhead - transmit bundles
             transmitted = []
             for bundle_id in queue[:3]:  # Transmit up to 3 bundles per update
-                if self.transmit_bundle(bundle_id, station_id, "ISS"):
-                    transmitted.append(bundle_id)
+                result = self.transmit_bundle(bundle_id, station_id, "ISS")
+                if result:
+                    success, ack = result
+                    if success:
+                        transmitted.append(bundle_id)
+                        if ack:
+                            self.queue_ack(ack)
             
             if transmitted:
                 print(f"📡 {station_id} transmitted {len(transmitted)} bundles to ISS")
@@ -191,7 +246,11 @@ class DTNBundleManager:
             # Forward bundle to next station that will have contact
             # Forward highest priority bundle
             bundle_id = queue[0]
-            self.transmit_bundle(bundle_id, station_id, next_visible_station)
+            result = self.transmit_bundle(bundle_id, station_id, next_visible_station)
+            if result:
+                success, ack = result
+                if success and ack:
+                    self.queue_ack(ack)
     
     def cleanup_expired(self):
         """Remove expired bundles from all queues"""

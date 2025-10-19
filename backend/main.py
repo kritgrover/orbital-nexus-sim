@@ -224,6 +224,9 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                     station_data["is_visible"],
                     next_hop_station
                 )
+
+            # Get and broadcast custody ACKs
+            pending_acks = dtn_manager.get_pending_acks()
             
             # Cleanup expired bundles every 60 seconds
             if iteration % 60 == 0:
@@ -317,7 +320,8 @@ async def orbital_tracking_websocket(websocket: WebSocket):
                 "orbital_parameters": orbital_parameters,
                 "link_status": link_status,
                 "link_budget_history": list(link_budget_history),
-                "dtn_queues": dtn_queues  # NEW
+                "dtn_queues": dtn_queues,
+                "custody_acks": pending_acks  # NEW: Add ACKs to data stream
             }
             
             # Send data
