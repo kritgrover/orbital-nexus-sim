@@ -7,14 +7,12 @@ import OrbitalParameters from "@/components/dashboard/OrbitalParameters";
 import MessageExchange from "@/components/dashboard/MessageExchange";
 import StationNetwork from "@/components/dashboard/StationNetwork";
 import LinkBudgetChart from "@/components/analytics/LinkBudgetChart";
-import PassPrediction from "@/components/analytics/PassPrediction";
 import TrafficFlowMonitor from "@/components/analytics/TrafficFlowMonitor";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useState, useEffect } from "react";
 import { DEFAULT_STATIONS, GroundStation } from "@/types/groundStation";
 
 const Index = () => {
-  // Only use orbital tracking connection - remove the duplicate /ws connection
   const { isConnected: orbitalConnected, orbitalData } = useOrbitalTracking();
 
   const [stations, setStations] = useState<GroundStation[]>(DEFAULT_STATIONS);
@@ -69,7 +67,6 @@ const Index = () => {
   
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Pass orbital connection status to header */}
       <Header isConnected={orbitalConnected} connectionError={orbitalConnected ? null : "Connecting..."} />
       
       <main className="flex-1">
@@ -96,18 +93,17 @@ const Index = () => {
 
           <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
 
-          {/* Center Panel - Communication Dashboard */}
+          {/* Center Panel - Communication Dashboard (MORE SPACE NOW) */}
           <ResizablePanel defaultSize={42} minSize={30}>
             <div className="h-full border-r border-border p-4 space-y-4 overflow-y-auto">
               <LinkStatus linkStatus={orbitalData?.link_status ?? null} />
-              <OrbitalParameters orbitalData={orbitalData} />
               <MessageExchange 
                 activeStationId={activeStationId}
                 stationColor={activeStation?.color || '#4ade80'}
                 handoffCount={handoffCount}
                 linkStatus={orbitalData?.link_status ?? null}
                 dtnQueues={orbitalData?.dtn_queues ?? {}}
-                custodyAcks={orbitalData?.custody_acks ?? []}  // NEW
+                custodyAcks={orbitalData?.custody_acks ?? []}
               />
               <StationNetwork 
                 stations={stations}
@@ -122,18 +118,20 @@ const Index = () => {
 
           <ResizableHandle withHandle className="w-1 bg-muted hover:bg-primary/30 transition-colors" />
 
-          {/* Right Panel - Analytics */}
+          {/* Right Panel - Analytics & Orbital Parameters */}
           <ResizablePanel defaultSize={30} minSize={20}>
             <div className="h-full p-4 space-y-4 overflow-y-auto">
+              <OrbitalParameters orbitalData={orbitalData} />
               <LinkBudgetChart 
                 linkBudgetHistory={orbitalData?.link_budget_history ?? []}
                 currentSNR={orbitalData?.link_status?.snr_db}
               />
-              <PassPrediction 
-                handoffCount={handoffCount}
-                stationsUsed={stations.filter(s => s.isActive || s.elevation > 0).length}
+              <TrafficFlowMonitor 
+                linkStatus={orbitalData?.link_status ?? null}
+                allQueues={orbitalData?.dtn_queues ?? {}}
+                stations={orbitalData?.stations ?? []}
+                isConnected={orbitalData?.link_status?.connection_state === "ACQUIRED" || orbitalData?.link_status?.connection_state === "DEGRADED"}
               />
-              <TrafficFlowMonitor />
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

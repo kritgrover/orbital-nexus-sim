@@ -10,7 +10,7 @@ class LinkBudgetCalculator:
     BOLTZMANN_CONSTANT = 1.380649e-23  # J/K
     
     # ISS Communication parameters
-    ISS_TRANSMIT_POWER_DBM = 37.0  # dBm (~5 Watts)
+    ISS_TRANSMIT_POWER_DBM = 43.0  # dBm
     ISS_ANTENNA_GAIN_DBI = 12.0    # dBi
     GROUND_ANTENNA_GAIN_DBI = 18.0  # dBi
     SYSTEM_NOISE_TEMP_K = 125.0     # Kelvin
@@ -150,22 +150,3 @@ class LinkBudgetCalculator:
             "noise_floor_dbm": round(noise_floor_dbm, 2),
             "radial_velocity_kmps": round(radial_velocity_kmps, 3)
         }
-    
-    def calculate_radial_velocity(self, iss_velocity_kmps: float, azimuth_deg: float, 
-                                 elevation_deg: float) -> float:
-        """
-        Estimate radial velocity component (velocity toward/away from ground station)
-        Positive = approaching, Negative = receding
-        """
-        # Simplified calculation - assumes ISS velocity is tangent to orbit
-        # Radial component depends on geometry
-        elevation_rad = math.radians(elevation_deg)
-        azimuth_rad = math.radians(azimuth_deg)
-        
-        # When ISS is rising (approaching), radial velocity is positive
-        # When ISS is setting (receding), radial velocity is negative
-        # Peak radial velocity at horizon crossings
-        
-        radial_velocity = iss_velocity_kmps * math.cos(elevation_rad) * 0.5
-        
-        return float(radial_velocity)

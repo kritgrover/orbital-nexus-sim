@@ -33,8 +33,8 @@ const SkyView = ({
       description: "24/7 ISS live feed"
     },
     {
-      name: "ISS Live with Location Tracker",
-      url: "https://www.youtube.com/embed/bfnPzF8dZHY?autoplay=1&mute=1",
+      name: "LIVE Video from the International Space Station",
+      url: "https://www.youtube.com/embed/hl0CtTZzUGg?si=IlY8gRc6VtUhr8Cl",
       description: "24/7 ISS live feed"
     }
   ];

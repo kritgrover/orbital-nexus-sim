@@ -1,26 +1,97 @@
 import { Card } from "@/components/ui/card";
 import { useState, useEffect } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
+import { ArrowRight, CheckCircle } from "lucide-react";
 
-interface PacketQueueItem {
-  id: number;
-  priority: 'high' | 'normal' | 'low';
-  timestamp: number;
+interface DTNBundle {
+  bundle_id: string;
+  bundle_id_short: string;
+  priority: "EXPEDITED" | "NORMAL" | "BULK";
+  status: string;
+  age_seconds: number;
+  hops: string[];
+  current_custodian: string;
+  created_at: string;
+  delivered_at?: string | null;
 }
 
-const TrafficFlowMonitor = () => {
-  const [uplinkBandwidth, setUplinkBandwidth] = useState(2.4);
-  const [downlinkBandwidth, setDownlinkBandwidth] = useState(8.7);
-  const [packetQueue, setPacketQueue] = useState<PacketQueueItem[]>([]);
+interface Station {
+  id: string;
+  name: string;
+  is_visible: boolean;
+}
+
+interface TrafficFlowMonitorProps {
+  linkStatus?: {
+    connection_state: "ACQUIRED" | "DEGRADED" | "IDLE";
+    snr_db: number;
+    range_km: number;
+  } | null;
+  activeStationQueue?: DTNBundle[];
+  allQueues?: Record<string, DTNBundle[]>;
+  stations?: Station[];
+  isConnected?: boolean;
+}
+
+interface BundleJourney {
+  bundle_id_short: string;
+  payload: string;
+  hops: string[];
+  priority: string;
+  status: string;
+  created_at: string;
+  delivered_at?: string | null;
+}
+
+interface StationSignalHistory {
+  [stationId: string]: boolean[]; // Last 1800 samples (30 minutes at 1 sample/sec)
+}
+
+const TrafficFlowMonitor = ({ 
+  linkStatus,
+  allQueues = {},
+  stations = [],
+  isConnected = false 
+}: TrafficFlowMonitorProps) => {
+  const [uplinkBandwidth, setUplinkBandwidth] = useState(0);
+  const [downlinkBandwidth, setDownlinkBandwidth] = useState(0);
   const [throughputData, setThroughputData] = useState<Array<{time: string, uplink: number, downlink: number}>>([]);
-  const [queueStats, setQueueStats] = useState({ avgTime: 45, maxDepth: 12 });
-  const [packetSizes, setPacketSizes] = useState([12, 28, 35, 18, 5, 2]);
-  const [protocolData, setProtocolData] = useState([
-    { name: 'HTTP/HTTPS', value: 42.3, color: '#00d4ff' },
-    { name: 'TCP Control', value: 28.7, color: '#3b82f6' },
-    { name: 'UDP Telemetry', value: 24.1, color: '#4ade80' },
-    { name: 'ICMP/Other', value: 4.9, color: '#6b7280' },
-  ]);
+  const [queueStats, setQueueStats] = useState({ avgTime: 0, maxDepth: 0 });
+  const [bundleJourneys, setBundleJourneys] = useState<BundleJourney[]>([]);
+  const [signalHistory, setSignalHistory] = useState<StationSignalHistory>({});
+
+  // Initialize signal history for all stations
+  useEffect(() => {
+    if (stations.length > 0) {
+      const initialHistory: StationSignalHistory = {};
+      stations.forEach(station => {
+        if (!signalHistory[station.id]) {
+          initialHistory[station.id] = Array(1800).fill(false); // 30 minutes
+        }
+      });
+      setSignalHistory(prev => ({ ...prev, ...initialHistory }));
+    }
+  }, [stations]);
+
+  // Update signal history every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSignalHistory(prev => {
+        const updated = { ...prev };
+        stations.forEach(station => {
+          if (updated[station.id]) {
+            // Shift array and add new sample
+            updated[station.id] = [...updated[station.id].slice(1), station.is_visible];
+          } else {
+            updated[station.id] = Array(1800).fill(false); // 30 minutes
+          }
+        });
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [stations]);
 
   // Initialize throughput data
   useEffect(() => {
@@ -28,85 +99,136 @@ const TrafficFlowMonitor = () => {
     for (let i = 60; i >= 0; i -= 5) {
       initialData.push({
         time: `-${i}s`,
-        uplink: Math.random() * 3 + 1.5,
-        downlink: Math.random() * 10 + 5,
+        uplink: 0,
+        downlink: 0,
       });
     }
     setThroughputData(initialData);
   }, []);
 
-  // Update bandwidth and throughput data
+  // Calculate realistic bandwidth based on link quality
+  useEffect(() => {
+    console.log('Link Status Update:', {
+      linkStatus,
+      isConnected,
+      connectionState: linkStatus?.connection_state,
+      snr: linkStatus?.snr_db
+    });
+
+    if (!linkStatus || linkStatus.connection_state === "IDLE") {
+      console.log('Setting bandwidth to 0 - IDLE or no link status');
+      setUplinkBandwidth(0);
+      setDownlinkBandwidth(0);
+      return;
+    }
+
+    const { connection_state, snr_db } = linkStatus;
+
+    let uplinkRate = 0;
+    let downlinkRate = 0;
+
+    if (connection_state === "ACQUIRED") {
+      // SNR ≥ 10 dB - Good connection
+      const snrFactor = Math.min((snr_db - 10) / 30, 1);
+      uplinkRate = 1.2 + (snrFactor * 8.8);
+      downlinkRate = 3 + (snrFactor * 22);
+      
+      // Add some realistic variation
+      uplinkRate += (Math.random() - 0.5) * 0.5;
+      downlinkRate += (Math.random() - 0.5) * 1.5;
+      
+      console.log('ACQUIRED - Calculated rates:', { uplinkRate, downlinkRate, snr_db, snrFactor });
+    } else if (connection_state === "DEGRADED") {
+      // SNR 3-10 dB - Marginal connection
+      const snrFactor = Math.min((snr_db - 3) / 7, 1);
+      uplinkRate = 0.3 + (snrFactor * 0.9);
+      downlinkRate = 0.8 + (snrFactor * 2.2);
+      
+      // More variation for degraded link
+      uplinkRate += (Math.random() - 0.5) * 0.3;
+      downlinkRate += (Math.random() - 0.5) * 0.8;
+      
+      console.log('DEGRADED - Calculated rates:', { uplinkRate, downlinkRate, snr_db, snrFactor });
+    }
+
+    setUplinkBandwidth(Math.max(0, uplinkRate));
+    setDownlinkBandwidth(Math.max(0, downlinkRate));
+
+  }, [linkStatus, isConnected]);
+
+  // Update throughput graph
   useEffect(() => {
     const interval = setInterval(() => {
-      const newUplink = Math.random() * 4 + 1;
-      const newDownlink = Math.random() * 12 + 4;
-      
-      setUplinkBandwidth(newUplink);
-      setDownlinkBandwidth(newDownlink);
-
       setThroughputData(prev => {
         const newData = [...prev.slice(1), {
           time: '0s',
-          uplink: newUplink,
-          downlink: newDownlink,
+          uplink: uplinkBandwidth,
+          downlink: downlinkBandwidth,
         }];
         return newData;
       });
-
-      // Update queue stats
-      setQueueStats({
-        avgTime: Math.floor(Math.random() * 30 + 30),
-        maxDepth: Math.floor(Math.random() * 8 + 8),
-      });
-
-      // Occasionally update packet sizes
-      if (Math.random() > 0.7) {
-        setPacketSizes([
-          Math.floor(Math.random() * 10 + 8),
-          Math.floor(Math.random() * 15 + 20),
-          Math.floor(Math.random() * 10 + 30),
-          Math.floor(Math.random() * 10 + 13),
-          Math.floor(Math.random() * 5 + 3),
-          Math.floor(Math.random() * 3 + 1),
-        ]);
-      }
     }, 1500);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [uplinkBandwidth, downlinkBandwidth]);
 
-  // Manage packet queue
+  // In the component, calculate ALL bundles across network
+  const allBundles = Object.values(allQueues).flat();
+  const allQueuedBundles = allBundles.filter(b => b.status === "QUEUED");
+
+  // Update queue stats to use all bundles
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Add new packet
-      if (Math.random() > 0.3 && packetQueue.length < 15) {
-        const priority = Math.random() > 0.7 ? 'high' : Math.random() > 0.5 ? 'normal' : 'low';
-        setPacketQueue(prev => [...prev, {
-          id: Date.now(),
-          priority,
-          timestamp: Date.now(),
-        }]);
-      }
+    if (allBundles.length === 0) {
+      setQueueStats({ avgTime: 0, maxDepth: 0 });
+      return;
+    }
 
-      // Remove old packet
-      if (packetQueue.length > 0 && Math.random() > 0.4) {
-        setPacketQueue(prev => prev.slice(1));
-      }
-    }, 800);
+    const avgAge = allQueuedBundles.length > 0 
+      ? allQueuedBundles.reduce((sum, b) => sum + b.age_seconds, 0) / allQueuedBundles.length 
+      : 0;
+    
+    setQueueStats({
+      avgTime: Math.floor(avgAge * 1000),
+      maxDepth: allBundles.length
+    });
+  }, [allQueues]); // Changed dependency
 
-    return () => clearInterval(interval);
-  }, [packetQueue.length]);
+  // Track bundle journeys (delivered and in-progress)
+  useEffect(() => {
+    const allBundles: DTNBundle[] = Object.values(allQueues).flat();
+    
+    // Get delivered bundles and recently created bundles
+    const journeys = allBundles
+      .filter(b => b.status === "DELIVERED" || b.hops.length > 0)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5)
+      .map(b => ({
+        bundle_id_short: b.bundle_id_short,
+        payload: "payload" in b ? (b as any).payload?.substring(0, 20) || "data" : "data",
+        hops: b.hops,
+        priority: b.priority,
+        status: b.status,
+        created_at: b.created_at,
+        delivered_at: b.delivered_at
+      }));
+    
+    setBundleJourneys(journeys);
+  }, [allQueues]);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high': return '#ef4444';
-      case 'normal': return '#00d4ff';
-      case 'low': return '#6b7280';
+      case 'EXPEDITED': return '#ef4444';
+      case 'NORMAL': return '#00d4ff';
+      case 'BULK': return '#6b7280';
       default: return '#6b7280';
     }
   };
 
-  const totalPackets = protocolData.reduce((sum, p) => sum + p.value, 0) * 100;
+  // Calculate uptime percentage for a station
+  const calculateUptime = (history: boolean[]) => {
+    const activeCount = history.filter(v => v).length;
+    return Math.round((activeCount / history.length) * 100);
+  };
 
   return (
     <Card className="p-5">
@@ -119,7 +241,9 @@ const TrafficFlowMonitor = () => {
         <div>
           <div className="flex justify-between items-center mb-1">
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">UPLINK</span>
-            <span className="text-xs font-mono text-muted-foreground">{uplinkBandwidth.toFixed(1)} Mbps / 10 Mbps</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {uplinkBandwidth.toFixed(1)} Mbps / 10 Mbps
+            </span>
           </div>
           <div className="h-3 bg-[#1a1d29] rounded-full overflow-hidden">
             <div 
@@ -131,7 +255,9 @@ const TrafficFlowMonitor = () => {
         <div>
           <div className="flex justify-between items-center mb-1">
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">DOWNLINK</span>
-            <span className="text-xs font-mono text-muted-foreground">{downlinkBandwidth.toFixed(1)} Mbps / 25 Mbps</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {downlinkBandwidth.toFixed(1)} Mbps / 25 Mbps
+            </span>
           </div>
           <div className="h-3 bg-[#1a1d29] rounded-full overflow-hidden">
             <div 
@@ -142,30 +268,35 @@ const TrafficFlowMonitor = () => {
         </div>
       </div>
 
-      {/* 2. Packet Queue Visualization */}
+      {/* 2. Bundle Queue Visualization - NETWORK-WIDE */}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">PACKET QUEUE</span>
-          <span className="text-xs font-mono text-muted-foreground">Queue: {packetQueue.length} packets</span>
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">NETWORK BUNDLE QUEUE</span>
+          <span className="text-xs font-mono text-muted-foreground">
+            Queue: {allQueuedBundles.length} bundles
+          </span>
         </div>
-        <div className="flex gap-1 mb-2 h-5 items-center">
-          {packetQueue.slice(0, 15).map((packet) => (
-            <div
-              key={packet.id}
-              className="w-[30px] h-5 rounded animate-fade-in"
-              style={{
-                backgroundColor: getPriorityColor(packet.priority),
-                boxShadow: `0 0 8px ${getPriorityColor(packet.priority)}50`,
-              }}
-            />
-          ))}
-          {packetQueue.length === 0 && (
-            <span className="text-xs text-muted-foreground/50 italic">No packets in queue</span>
+        <div className="flex gap-1 mb-2 h-5 items-center flex-wrap">
+          {allQueuedBundles
+            .slice(0, 15)
+            .map((bundle) => (
+              <div
+                key={bundle.bundle_id}
+                className="w-[30px] h-5 rounded animate-fade-in"
+                style={{
+                  backgroundColor: getPriorityColor(bundle.priority),
+                  boxShadow: `0 0 8px ${getPriorityColor(bundle.priority)}50`,
+                }}
+                title={`${bundle.priority}: ${bundle.bundle_id_short} @ ${bundle.current_custodian}`}
+              />
+            ))}
+          {allQueuedBundles.length === 0 && (
+            <span className="text-xs text-muted-foreground/50 italic">No bundles in queue</span>
           )}
         </div>
         <div className="flex justify-between text-[10px] text-muted-foreground">
           <span>Avg Queue Time: {queueStats.avgTime} ms</span>
-          <span>Max Queue Depth: {queueStats.maxDepth} packets</span>
+          <span>Network Depth: {queueStats.maxDepth} bundles</span>
         </div>
       </div>
 
@@ -222,69 +353,38 @@ const TrafficFlowMonitor = () => {
         </ResponsiveContainer>
       </div>
 
-      {/* 4. Packet Size Distribution Histogram */}
+      {/* Signal Quality Heatmap */}
       <div className="mb-4 p-3 bg-[#1a1d29] rounded-lg">
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-3">
-          PACKET SIZE DISTRIBUTION
+          SIGNAL QUALITY (LAST 30 MIN)
         </div>
-        <div className="flex justify-between items-end gap-1 h-24">
-          {['0-64B', '65-256B', '257-512B', '513-1024B', '1025-1500B', '>1500B'].map((label, idx) => (
-            <div key={label} className="flex-1 flex flex-col items-center gap-1">
-              <span className="text-[10px] font-mono text-cyan-400">{packetSizes[idx]}%</span>
-              <div 
-                className="w-full bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-t transition-all duration-500"
-                style={{ height: `${packetSizes[idx] * 2}%` }}
-              />
-              <span className="text-[9px] text-muted-foreground text-center leading-tight">{label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 5. Protocol Breakdown */}
-      <div className="p-3 bg-[#1a1d29] rounded-lg">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-3">
-          PROTOCOL DISTRIBUTION
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="w-32 h-32 flex-shrink-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={protocolData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={35}
-                  outerRadius={55}
-                  dataKey="value"
-                  isAnimationActive={false}
-                >
-                  {protocolData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="text-center -mt-20 pointer-events-none">
-              <div className="text-xs font-mono text-muted-foreground">Total:</div>
-              <div className="text-sm font-mono text-foreground">{Math.floor(totalPackets)}</div>
-              <div className="text-[9px] text-muted-foreground">packets</div>
-            </div>
-          </div>
-          <div className="flex-1 space-y-2">
-            {protocolData.map((protocol) => (
-              <div key={protocol.name} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span 
-                    className="w-3 h-3 rounded-sm" 
-                    style={{ backgroundColor: protocol.color }}
-                  />
-                  <span className="text-muted-foreground">{protocol.name}</span>
+        <div className="space-y-2">
+          {stations.slice(0, 6).map((station) => {
+            const history = signalHistory[station.id] || Array(1800).fill(false);
+            const uptime = calculateUptime(history);
+            
+            return (
+              <div key={station.id} className="flex items-center gap-2">
+                <div className="flex-shrink-0 w-20 text-[10px] font-mono text-secondary">
+                  {station.name}
                 </div>
-                <span className="font-mono text-foreground">{protocol.value.toFixed(1)}%</span>
+                <div className="flex-1 flex gap-[1px]">
+                  {history.map((active, idx) => (
+                    <div
+                      key={idx}
+                      className="flex-1 h-4 rounded-[1px]"
+                      style={{
+                        backgroundColor: active ? '#22c55e' : '#1e293b',
+                      }}
+                    />
+                  ))}
+                </div>
+                <div className="flex-shrink-0 w-10 text-right text-[10px] font-mono text-secondary">
+                  {uptime}%
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
     </Card>
